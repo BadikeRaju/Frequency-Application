@@ -1,10 +1,26 @@
-# streamlit_app.py
+import os
+import pytesseract
+from urllib.request import urlretrieve
 import streamlit as st
 from PIL import Image
-import pytesseract
 from collections import Counter
 from streamlit_cropper import st_cropper
 
+# Set TESSDATA_PREFIX to the local directory
+os.environ['TESSDATA_PREFIX'] = './tessdata'
+
+# Ensure tessdata directory exists
+os.makedirs('./tessdata', exist_ok=True)
+
+# Path to Telugu language file
+tel_path = './tessdata/tel.traineddata'
+
+# Download Telugu trained data if it's not already in the tessdata directory
+if not os.path.exists(tel_path):
+    urlretrieve('https://github.com/tesseract-ocr/tessdata/raw/main/tel.traineddata', tel_path)
+
+# The rest of your Streamlit app code starts here
+# For example:
 # Define the ordered list of Telugu characters for display
 ordered_telugu_chars = [
     'అ', 'ఆ', 'ఇ', 'ఈ', 'ఉ', 'ఊ', 'ఋ', 'ఎ', 'ఏ', 'ఐ', 'ఒ', 'ఓ', 'ఔ',
@@ -12,6 +28,9 @@ ordered_telugu_chars = [
     'త', 'థ', 'ద', 'ధ', 'న', 'ప', 'ఫ', 'బ', 'భ', 'మ', 'య', 'ర', 'ల', 'వ', 'శ', 'ష', 'స', 'హ',
     'ా', 'ి', 'ీ', 'ు', 'ూ', 'ృ', 'ె', 'ే', 'ై', 'ొ', 'ో', 'ౌ', 'ం', 'ః', '్'
 ]
+
+# Function definitions and Streamlit app code go here...
+
 
 def extract_text_from_image(image):
     """Extract text from image using pytesseract."""
