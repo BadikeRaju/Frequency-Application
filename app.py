@@ -1,26 +1,17 @@
 import os
 import pytesseract
-from urllib.request import urlretrieve
 import streamlit as st
 from PIL import Image
 from collections import Counter
 from streamlit_cropper import st_cropper
+import re
 
 # Set TESSDATA_PREFIX to the local directory
 os.environ['TESSDATA_PREFIX'] = './tessdata'
 
-# Ensure tessdata directory exists
+# Ensure tessdata directory exists (this won't download anything, just sets up the folder)
 os.makedirs('./tessdata', exist_ok=True)
 
-# Path to Telugu language file
-tel_path = './tessdata/tel.traineddata'
-
-# Download Telugu trained data if it's not already in the tessdata directory
-if not os.path.exists(tel_path):
-    urlretrieve('https://github.com/tesseract-ocr/tessdata/raw/main/tel.traineddata', tel_path)
-
-# The rest of your Streamlit app code starts here
-# For example:
 # Define the ordered list of Telugu characters for display
 ordered_telugu_chars = [
     'అ', 'ఆ', 'ఇ', 'ఈ', 'ఉ', 'ఊ', 'ఋ', 'ఎ', 'ఏ', 'ఐ', 'ఒ', 'ఓ', 'ఔ',
@@ -29,19 +20,26 @@ ordered_telugu_chars = [
     'ా', 'ి', 'ీ', 'ు', 'ూ', 'ృ', 'ె', 'ే', 'ై', 'ొ', 'ో', 'ౌ', 'ం', 'ః', '్'
 ]
 
-# Function definitions and Streamlit app code go here...
-
-
+# Function to extract text from image using pytesseract
 def extract_text_from_image(image):
     """Extract text from image using pytesseract."""
     text = pytesseract.image_to_string(image, lang='tel')
     return text
 
+# Function to count only Telugu characters and matras in the text
 def count_telugu_characters(text):
     """Count only Telugu characters and matras in the text."""
     telugu_text = [char for char in text if '\u0C00' <= char <= '\u0C7F']
     counts = Counter(telugu_text)
     return {char: counts.get(char, 0) for char in ordered_telugu_chars}
+
+# Function to count occurrences of each Telugu word
+def count_telugu_words(text):
+    """Count occurrences of each Telugu word in the text."""
+    # Split text using spaces and Telugu-specific punctuation to get words
+    words = re.findall(r'[\u0C00-\u0C7F]+', text)
+    word_counts = Counter(words)
+    return word_counts
 
 # Streamlit application
 st.title("Ordered Telugu Character Count from Image with Cropping and Editing")
@@ -91,6 +89,22 @@ if uploaded_image is not None:
         st.write("**Counts**")
         st.text_area("Counts Column", counts_str, height=400)
         st.button("Copy All Counts", on_click=lambda: st.session_state.update({"copy_counts": counts_str}))
+
+    # Count Telugu word occurrences and display word counts in two columns
+    st.write("### Telugu Word Frequency")
+    word_counts = count_telugu_words(user_text)
+    
+    # Split into two columns for word frequency
+    word_col, freq_col = st.columns(2)
+    with word_col:
+        st.write("**Words**")
+        words_str = '\n'.join(word_counts.keys())
+        st.text_area("Words Column", words_str, height=400)
+    
+    with freq_col:
+        st.write("**Frequency**")
+        freq_str = '\n'.join([str(count) for count in word_counts.values()])
+        st.text_area("Frequency Column", freq_str, height=400)
 
 else:
     st.info("Please upload an image to analyze.")
