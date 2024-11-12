@@ -2,51 +2,111 @@ import os
 import pytesseract
 import streamlit as st
 from PIL import Image
-from collections import Counter
+from collections import Counter, defaultdict
 from streamlit_cropper import st_cropper
 import re
 
 # Set TESSDATA_PREFIX to the local directory
 os.environ['TESSDATA_PREFIX'] = './tessdata'
 
-# Ensure tessdata directory exists (this won't download anything, just sets up the folder)
+# Ensure tessdata directory exists
 os.makedirs('./tessdata', exist_ok=True)
 
-# Define the ordered list of Telugu characters and matras for display
+# Define Telugu characters and matras in the required display order
 ordered_telugu_chars = [
-    'అ', 'ఆ', 'ఇ', 'ఈ', 'ఉ', 'ఊ', 'ఋ', 'ఎ', 'ఏ', 'ఐ', 'ఒ', 'ఓ', 'ఔ',
+    'అ', 'ఆ', 'ఇ', 'ఈ', 'ఉ', 'ఊ', 'ఋ', 'ౠ', 'ఌ', 'ౡ', 'ఎ', 'ఏ', 'ఐ', 'ఒ', 'ఓ', 'ఔ', 'అం', 'అః'
+]
+ordered_telugu_consonants = [
     'క', 'ఖ', 'గ', 'ఘ', 'ఙ', 'చ', 'ఛ', 'జ', 'ఝ', 'ఞ', 'ట', 'ఠ', 'డ', 'ఢ', 'ణ',
     'త', 'థ', 'ద', 'ధ', 'న', 'ప', 'ఫ', 'బ', 'భ', 'మ', 'య', 'ర', 'ల', 'వ', 'శ', 'ష', 'స', 'హ',
-    'ళ', 'క్ష', 'ఱ'  # Additional characters
+    'ళ', 'క్ష', 'ఱ'
 ]
 ordered_telugu_matras = [
-    'ా', 'ి', 'ీ', 'ు', 'ూ', 'ృ', 'ె', 'ే', 'ై', 'ొ', 'ో', 'ౌ', 'ం', 'ః', '్',
-    'ౠ', 'ఌ', 'ౡ'  # Additional matras
-]
+    '✓(అ)', 'ా', 'ి', 'ీ', 'ు', 'ూ', 'ృ', 'ె', 'ే', 'ై', 'ొ', 'ో', 'ౌ', 'ం', 'ః'
+]  # Note: '్' is intentionally excluded
+
+# Define matras and consonants eligible for implicit "అ"
+matras = ['\u0C3E', '\u0C3F', '\u0C40', '\u0C41', '\u0C42', '\u0C43', '\u0C44', 
+          '\u0C46', '\u0C47', '\u0C48', '\u0C4A', '\u0C4B', '\u0C4C', '\u0C02', '\u0C03']  # Include 'ం' and 'ః' but exclude '్'
+eligible_consonants_for_implicit_a = set(ordered_telugu_consonants)
+
+def analyze_text(text):
+    """Breaks down text into letters, matras, and counts `✓(అ)` for consonants without matras."""
+    results = []
+    word_counts = Counter(text.split())  # Count occurrences of each word
+
+    for word, frequency in word_counts.items():
+        letter_count = defaultdict(int)
+        matra_count = defaultdict(int)
+        letters_without_matras = []
+
+        for i, char in enumerate(word):
+            if re.match(r'[\u0C05-\u0C39\u0C58-\u0C5F]', char):  # Telugu letters range
+                letter_count[char] += 1
+                letters_without_matras.append(char)  # Assume no matra at first
+            elif char in matras:
+                matra_count[char] += 1
+                if letters_without_matras:
+                    letters_without_matras.pop()  # Remove if matra follows
+
+        # Add `✓(అ)` count if there are letters without matras
+        if letters_without_matras:
+            matra_count["✓(అ)"] = len(letters_without_matras)
+
+        # Multiply counts by word frequency
+        for char in letter_count:
+            letter_count[char] *= frequency
+        for char in matra_count:
+            matra_count[char] *= frequency
+
+        results.append({
+            "word": word,
+            "frequency": frequency,
+            "letter_counts": letter_count,
+            "matra_counts": matra_count
+        })
+
+    # Sort results by word frequency in descending order
+    results = sorted(results, key=lambda x: x["frequency"], reverse=True)
+    return results
+
+def get_total_character_frequency(word_breakdown):
+    """Calculate total frequency of each character and matra based on the word breakdown."""
+    total_letter_counts = Counter()
+    total_matra_counts = Counter()
+
+    for entry in word_breakdown:
+        total_letter_counts.update(entry['letter_counts'])
+        total_matra_counts.update(entry['matra_counts'])
+
+    # Format the frequency for display in the specified order
+    formatted_frequency = "Character\tCount\n"
+    
+    # Add ordered Telugu characters
+    for char in ordered_telugu_chars:
+        count = total_letter_counts.get(char, 0)
+        formatted_frequency += f"{char}\t{count}\n"
+    
+    # Add ordered consonants and implicit `✓(అ)` if applicable
+    formatted_frequency += "\n"
+    for char in ordered_telugu_consonants:
+        count = total_letter_counts.get(char, 0)
+        formatted_frequency += f"{char}\t{count}\n"
+    
+    # Add matras in the requested order
+    formatted_frequency += "\n"
+    for matra in ordered_telugu_matras:
+        count = total_matra_counts.get(matra, 0)
+        formatted_frequency += f"{matra}\t{count}\n"
+    
+    return formatted_frequency
 
 def extract_text_from_image(image):
     """Extract text from image using pytesseract."""
     text = pytesseract.image_to_string(image, lang='tel')
     return text
 
-def count_telugu_characters(text):
-    """Count only Telugu characters and separate matras in the text."""
-    telugu_chars = [char for char in text if char in ordered_telugu_chars]
-    telugu_matras = [char for char in text if char in ordered_telugu_matras]
-    char_counts = Counter(telugu_chars)
-    matra_counts = Counter(telugu_matras)
-    return (
-        {char: char_counts.get(char, 0) for char in ordered_telugu_chars},
-        {matra: matra_counts.get(matra, 0) for matra in ordered_telugu_matras}
-    )
-
-def count_telugu_words(text):
-    """Count occurrences of each Telugu word in the text."""
-    words = re.findall(r'[\u0C00-\u0C7F]+', text)
-    word_counts = Counter(words).most_common()
-    return word_counts
-
-st.title("Ordered Telugu Character Count from Image with Cropping and Editing")
+st.title("Telugu Character and Matra Frequency with Copy Option")
 
 uploaded_image = st.file_uploader("Upload an image with Telugu text", type=["png", "jpg", "jpeg"])
 
@@ -67,43 +127,24 @@ if uploaded_image is not None:
     st.write("### Edit Extracted Text")
     user_text = st.text_area("You can edit the extracted text here to remove any unwanted content:", extracted_text)
 
-    character_counts, matra_counts = count_telugu_characters(user_text)
+    # Get breakdown of words with letters and matras using the `analyze_text` function
+    word_breakdown = analyze_text(user_text)
+    character_frequency = get_total_character_frequency(word_breakdown)
 
-    characters_str = '\n'.join([char for char in character_counts.keys()])
-    char_counts_str = '\n'.join([str(count) for count in character_counts.values()])
-    matras_str = '\n'.join([matra for matra in matra_counts.keys()])
-    matra_counts_str = '\n'.join([str(count) for count in matra_counts.values()])
+    # Combine all word breakdowns into a single text block, sorted by word frequency
+    combined_output = "Word\tFrequency\tLetters\tMatras\n"
+    for entry in word_breakdown:
+        formatted_letters = ', '.join([f"{key}-{val}" for key, val in entry["letter_counts"].items()])
+        formatted_matras = ', '.join([f"{key}-{val}" for key, val in entry["matra_counts"].items() if key != "✓(అ)" or val > 0])
+        combined_output += f"{entry['word']}\t{entry['frequency']}\t{formatted_letters}\t{formatted_matras}\n"
 
-    st.write("### Telugu Character and Matra Frequency in Specified Order")
-    col1, col2, col3, col4 = st.columns(4)
+    # Display the combined output with a copy option
+    st.write("### Telugu Words with Character and Matra Breakdown (Copy All)")
+    st.text_area("Copy the entire breakdown to paste into Google Sheets", combined_output, height=300)
 
-    with col1:
-        st.write("**Characters**")
-        st.text_area("Characters Column", characters_str, height=400)
-
-    with col2:
-        st.write("**Character Counts**")
-        st.text_area("Character Counts Column", char_counts_str, height=400)
-
-    with col3:
-        st.write("**Matras**")
-        st.text_area("Matras Column", matras_str, height=400)
-
-    with col4:
-        st.write("**Matra Counts**")
-        st.text_area("Matra Counts Column", matra_counts_str, height=400)
-
-    st.write("### Telugu Word Frequency")
-    word_counts = count_telugu_words(user_text)
-
-    word_col, freq_col = st.columns(2)
-    with word_col:
-        words_str = '\n'.join([word for word, _ in word_counts])
-        st.text_area("Words Column", words_str, height=400)
-
-    with freq_col:
-        freq_str = '\n'.join([str(count) for _, count in word_counts])
-        st.text_area("Frequency Column", freq_str, height=400)
+    # Display character and matra frequency in the specified order
+    st.write("### Telugu Character and Matra Frequency (Copy All)")
+    st.text_area("Copy the character and matra frequency", character_frequency, height=300)
 
 else:
     st.info("Please upload an image to analyze.")
